@@ -48,8 +48,7 @@
         <include layout="@layout/hotseat"
             android:id="@+id/hotseat"
             android:layout_width="match_parent"
-            android:layout_height="match_parent"
-	    android:visibility="gone" />
+            android:layout_height="match_parent" />
 
         <include layout="@layout/overview_panel"
             android:id="@+id/overview_panel"
@@ -62,13 +61,11 @@
             layout="@layout/page_indicator"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-	    android:visibility="gone"
             android:layout_gravity="center_horizontal" />
 
         <include
             android:id="@+id/search_drop_target_bar"
-            layout="@layout/search_drop_target_bar"
-	    android:visibility="gone" />
+            layout="@layout/search_drop_target_bar" />
 
         <include layout="@layout/widgets_view"
             android:id="@+id/widgets_view"

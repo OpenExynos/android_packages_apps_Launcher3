@@ -32,7 +32,6 @@
         android:layout_height="match_parent"
         android:layout_gravity="center_horizontal|top"
         android:clipToPadding="false"
-	android:background="#000000"
         android:focusable="true"
         android:descendantFocusability="afterDescendants" />
 

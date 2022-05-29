@@ -198,8 +198,8 @@ public class DeviceProfile {
         // Search Bar
         searchBarSpaceWidthPx = Math.min(widthPx,
                 res.getDimensionPixelSize(R.dimen.dynamic_grid_search_bar_max_width));
-        // searchBarSpaceHeightPx = getSearchBarTopOffset()
-        //         + res.getDimensionPixelSize(R.dimen.dynamic_grid_search_bar_height);
+        searchBarSpaceHeightPx = getSearchBarTopOffset()
+                + res.getDimensionPixelSize(R.dimen.dynamic_grid_search_bar_height);
 
         // Calculate the actual text height
         Paint textPaint = new Paint();
@@ -414,7 +414,7 @@ public class DeviceProfile {
         lp.gravity = Gravity.CENTER;
         Rect padding = getWorkspacePadding(isLayoutRtl);
         workspace.setLayoutParams(lp);
-        workspace.setPadding(padding.left, padding.top, padding.right, 0);
+        workspace.setPadding(padding.left, padding.top, padding.right, padding.bottom);
         workspace.setPageSpacing(getWorkspacePageSpacing(isLayoutRtl));
 
         // Layout the hotseat
