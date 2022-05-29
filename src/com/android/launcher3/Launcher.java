@@ -16,6 +16,7 @@
 
 package com.android.launcher3;
 
+import android.R.layout;
 import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
 import android.animation.AnimatorSet;
@@ -37,6 +38,7 @@ import android.content.BroadcastReceiver;
 import android.content.ComponentCallbacks2;
 import android.content.ComponentName;
 import android.content.Context;
+
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentFilter;
@@ -46,6 +48,7 @@ import android.content.pm.ActivityInfo;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.PackageManager.NameNotFoundException;
+import android.content.pm.ResolveInfo;
 import android.content.res.Configuration;
 import android.database.sqlite.SQLiteDatabase;
 import android.graphics.Bitmap;
@@ -55,6 +58,8 @@ import android.graphics.PorterDuff;
 import android.graphics.Rect;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
+import android.net.ConnectivityManager;
+import android.net.NetworkInfo;
 import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Build;
@@ -64,6 +69,7 @@ import android.os.Handler;
 import android.os.Message;
 import android.os.StrictMode;
 import android.os.SystemClock;
+import android.os.RemoteException;
 import android.os.UserHandle;
 import android.text.Selection;
 import android.text.SpannableStringBuilder;
@@ -90,6 +96,7 @@ import android.view.accessibility.AccessibilityEvent;
 import android.view.animation.OvershootInterpolator;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.Advanceable;
+import android.widget.BaseAdapter;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.TextView;
@@ -125,6 +132,17 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothDevice;
+
+import android.service.notification.StatusBarNotification;
+
+import android.net.wifi.WifiManager;
+
+import android.os.PowerManager;
+
+import java.util.Set;
+
 /**
  * Default launcher application.
  */
@@ -155,6 +173,7 @@ public class Launcher extends Activity
     private static final int WORKSPACE_BACKGROUND_BLACK = 2;
 
     private static final float BOUNCE_ANIMATION_TENSION = 1.3f;
+    private View mFirstScreenLayout;
 
     /**
      * IntentStarter uses request codes starting with this. This must be greater than all activity
@@ -210,6 +229,19 @@ public class Launcher extends Activity
 
     public static final String USER_HAS_MIGRATED = "launcher.user_migrated_from_old_data";
 
+    private final static String bConnectAction = "android.bluetooth.device.action.ACL_CONNECTED";
+    private final static String bDisconnectAction = "android.bluetooth.device.action.ACL_DISCONNECTED";
+    private String action_flag = "";
+
+    private PowerManager pm;
+    private PowerManager.WakeLock wl;
+
+    private Runnable runnable;
+    private Handler mTimeHandler = new Handler();
+
+    public static String blueToothFlag = "false";
+    public static String wifiFlag = "false";
+
     /** The different states that Launcher can be in. */
     enum State { NONE, WORKSPACE, APPS, APPS_SPRING_LOADED, WIDGETS, WIDGETS_SPRING_LOADED }
 
@@ -258,10 +290,8 @@ public class Launcher extends Activity
 
     @Thunk Hotseat mHotseat;
     private ViewGroup mOverviewPanel;
-
     private View mAllAppsButton;
     private View mWidgetsButton;
-
     private SearchDropTargetBar mSearchDropTargetBar;
 
     // Main container view for the all apps screen.
@@ -416,6 +446,8 @@ public class Launcher extends Activity
                     .build());
         }
 
+        registerBoradcastReceiver();
+
         if (mLauncherCallbacks != null) {
             mLauncherCallbacks.preOnCreate();
         }
@@ -513,13 +545,69 @@ public class Launcher extends Activity
             }
         }
 
-        if (shouldShowIntroScreen()) {
+       if (shouldShowIntroScreen()) {
             showIntroScreen();
-        } else {
-            showFirstRunActivity();
-            showFirstRunClings();
-        }
+       } else {
+           // showFirstRunActivity();
+           // showFirstRunClings();
+       }
+
+        //start ScreenService
+/*        startService(new Intent(Launcher.this,ScreenService.class));
+
+        pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
+
+        IntentFilter mScreenOnFilter = new IntentFilter("G-sensor");
+        this.registerReceiver(mScreenOReceiver,mScreenOnFilter);
+
+        IntentFilter mPowerFilter = new IntentFilter("android.intent.action.SCREEN_OFF");
+        this.registerReceiver(mPowerReceiver,mPowerFilter);
+
+        runnable = new Runnable() {
+            @Override
+            public void run() {
+                if(wl != null){
+                    wl.release();
+                    wl = null;
+                }
+            }
+        };*/
     }
+
+    private void startDelay(){
+        mTimeHandler.postDelayed(runnable,5*1000);
+    }
+
+    private void cancelDelay(){
+        mTimeHandler.removeCallbacks(runnable);
+    }
+
+    private BroadcastReceiver mScreenOReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+
+            if(wl == null){
+                wl = pm.newWakeLock(PowerManager.ACQUIRE_CAUSES_WAKEUP | PowerManager.SCREEN_BRIGHT_WAKE_LOCK,"bright");
+                if(wl != null){
+                    wl.acquire();
+                    startDelay();
+                }
+            }
+        }
+    };
+
+/*    private BroadcastReceiver mPowerReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+
+            if(wl != null){
+                wl.release();
+                wl = null;
+                cancelDelay();
+            }
+        }
+
+    };*/
 
     @Override
     public void onSettingsChanged(String settings, boolean value) {
@@ -618,7 +706,131 @@ public class Launcher extends Activity
         if (mLauncherCallbacks != null) {
             mLauncherCallbacks.populateCustomContentContainer();
         }
+
+       LayoutInflater inflater=(LayoutInflater)getSystemService(Context.LAYOUT_INFLATER_SERVICE);
+       mFirstScreenLayout = inflater.inflate(R.layout.first_screen, null);
+
+       TextView wifi_text = (TextView)mFirstScreenLayout.findViewById(R.id.wifi_text);
+       wifi_text.setText("WIFI\nDisconnected");
+
+       TextView bluetooth_text = (TextView)mFirstScreenLayout.findViewById(R.id.bluetooth_text);
+       bluetooth_text.setText("BlueTooth\nDisconnected");
+
+       CustomContentCallbacks customContentCallbacks = new CustomContentCallbacks(){
+           public void onHide(){
+
+           }
+           public void onScrollProgressChanged(float progress){
+
+           }
+           public void onShow(boolean fromResume){
+               ConnectivityManager Conn = (ConnectivityManager)getSystemService(Context.CONNECTIVITY_SERVICE);
+               NetworkInfo wifiInfo = Conn.getNetworkInfo(ConnectivityManager.TYPE_WIFI);
+                BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
+               Set<BluetoothDevice> devices = adapter.getBondedDevices();
+               if(devices.size()>0){
+                    TextView bluetooth_text = (TextView)mFirstScreenLayout.findViewById(R.id.bluetooth_text);
+                    bluetooth_text.setText("BlueTooth\nConnected");
+               } else {
+                    TextView bluetooth_text = (TextView)mFirstScreenLayout.findViewById(R.id.bluetooth_text);
+                    bluetooth_text.setText("BlueTooth\nDisconnected");
+               }
+
+               BluetoothAdapter mBluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
+
+               if(wifiInfo.isConnected()) {
+                   TextView wifi_text = (TextView)mFirstScreenLayout.findViewById(R.id.wifi_text);
+                   wifi_text.setText("WIFI\nConnected");
+               }else{
+                   TextView wifi_text = (TextView)mFirstScreenLayout.findViewById(R.id.wifi_text);
+                   wifi_text.setText("WIFI\nDisconnected");
+               }
+           }
+           
+           public boolean isScrollingAllowed(){
+
+               return true;
+           }
+
+       };
+
+       addToCustomContentPage(mFirstScreenLayout,customContentCallbacks,"ceshi");
     }
+
+    public void registerBoradcastReceiver() {
+        IntentFilter stateChangeFilter = new IntentFilter();
+
+        // stateChangeFilter.addAction(BluetoothAdapter.ACTION_STATE_CHANGED);
+        // stateChangeFilter.addAction(BluetoothDevice.ACTION_ACL_CONNECTED);
+        // stateChangeFilter.addAction(BluetoothDevice.ACTION_ACL_DISCONNECTED);
+
+        stateChangeFilter.addAction(BluetoothDevice.ACTION_FOUND);
+        stateChangeFilter.addAction(BluetoothDevice.ACTION_BOND_STATE_CHANGED);
+        stateChangeFilter.addAction(BluetoothAdapter.ACTION_STATE_CHANGED);
+
+        registerReceiver(BlueToothReceiver, stateChangeFilter);
+
+        IntentFilter mFilter = new IntentFilter("app_changed");
+        registerReceiver(MyReceiver, mFilter);
+
+        IntentFilter wifiFilter = new IntentFilter("android.net.wifi.WIFI_STATE_CHANGED");
+        registerReceiver(WifiReceiver, wifiFilter);
+    }
+
+    private BroadcastReceiver BlueToothReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            String action = intent.getAction();
+
+            BluetoothDevice device = null;
+            if(BluetoothDevice.ACTION_BOND_STATE_CHANGED.equals(action)){
+                TextView bluetooth_text = (TextView)mFirstScreenLayout.findViewById(R.id.bluetooth_text);
+                device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
+                switch (device.getBondState()) {
+                case BluetoothDevice.BOND_BONDING:
+                    bluetooth_text.setText("BlueTooth\nDisconnected");
+                    break;
+                case BluetoothDevice.BOND_BONDED:
+                    bluetooth_text.setText("BlueTooth\nConnected");
+                    break;  
+                case BluetoothDevice.BOND_NONE:
+                    bluetooth_text.setText("BlueTooth\nDisconnected");
+                    break;
+                default:
+                    break;
+                }
+            }
+            BluetoothAdapter mBluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
+            if(BluetoothAdapter.ACTION_STATE_CHANGED.equals(action)){
+                switch(mBluetoothAdapter.getState()){
+                case BluetoothAdapter.STATE_ON:
+                    blueToothFlag = "false";
+                    break;
+                case BluetoothAdapter.STATE_TURNING_ON:
+                    blueToothFlag = "false";
+                    break;
+                }
+            }
+        }
+    };
+
+    private BroadcastReceiver WifiReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            WifiManager mWifiManager = (WifiManager) context.getSystemService(Context.WIFI_SERVICE);
+            if(mWifiManager.isWifiEnabled()){
+                wifiFlag = "false";
+            }
+        }
+    };
+
+    private BroadcastReceiver MyReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            loadApps();
+            mWorkspace.refreshApp();
+        }
+    };
 
     /**
      * Invoked by subclasses to signal a change to the {@link #addCustomContentToLeft} value to
@@ -1067,6 +1279,8 @@ public class Launcher extends Activity
         if (mLauncherCallbacks != null) {
             mLauncherCallbacks.onResume();
         }
+
+        registerNotificationListener(getApplicationContext());
     }
 
     @Override
@@ -1088,6 +1302,8 @@ public class Launcher extends Activity
         if (mLauncherCallbacks != null) {
             mLauncherCallbacks.onPause();
         }
+
+        unregisterNotificationListener();
     }
 
     public interface CustomContentCallbacks {
@@ -1352,6 +1568,13 @@ public class Launcher extends Activity
         mFocusHandler = (FocusIndicatorView) findViewById(R.id.focus_indicator);
         mDragLayer = (DragLayer) findViewById(R.id.drag_layer);
         mWorkspace = (Workspace) mDragLayer.findViewById(R.id.workspace);
+        mWorkspace.setCallback(new Workspace.WorkspaceCallBack(){
+            @Override
+            public void show(){
+                showAppsView(false /* animated */, false /* resetListToTop */,
+                    true /* updatePredictedApps */, false /* focusSearchBar */);
+            }
+        });
         mWorkspace.setPageSwitchListener(this);
         mPageIndicators = mDragLayer.findViewById(R.id.page_indicator);
 
@@ -1609,14 +1832,13 @@ public class Launcher extends Activity
                 mUserPresent = false;
                 mDragLayer.clearAllResizeFrames();
                 updateAutoAdvanceState();
-
                 // Reset AllApps to its initial state only if we are not in the middle of
                 // processing a multi-step drop
                 if (mAppsView != null && mWidgetsView != null &&
                         mPendingAddInfo.container == ItemInfo.NO_ID) {
                     showWorkspace(false);
                 }
-            } else if (Intent.ACTION_USER_PRESENT.equals(action)) {
+            }else if (Intent.ACTION_USER_PRESENT.equals(action)) {
                 mUserPresent = true;
                 updateAutoAdvanceState();
             } else if (ENABLE_DEBUG_INTENTS && DebugIntents.DELETE_DATABASE.equals(action)) {
@@ -3125,7 +3347,7 @@ public class Launcher extends Activity
     }
 
     public boolean onLongClick(View v) {
-        if (!isDraggingEnabled()) return false;
+        /*if (!isDraggingEnabled()) return false;
         if (isWorkspaceLocked()) return false;
         if (mState != State.WORKSPACE) return false;
 
@@ -3181,8 +3403,8 @@ public class Launcher extends Activity
                     mWorkspace.startDrag(longClickCellInfo);
                 }
             }
-        }
-        return true;
+        }*/
+        return false;
     }
 
     boolean isHotseatLayout(View layout) {
@@ -3647,8 +3869,118 @@ public class Launcher extends Activity
         }
     }
 
+    /*
+    * load notifications
+    **/
+    private List<StatusBarNotification> mNotifications;
+
+    private final MyNotificationListener mNotificationListener = MyNotificationListener.getInstance();
+    private boolean isRegister = false;
+
+    public void registerNotificationListener(Context mContext) {
+        if (isRegister) return;
+        try {
+            mNotificationListener.registerAsSystemService(mContext,
+                new ComponentName(mContext.getPackageName(), getClass().getCanonicalName()),
+                UserHandle.USER_ALL);
+            isRegister = true;
+        } catch (RemoteException e) {
+            e.printStackTrace();
+            Log.e(TAG, "Unable to register notification listener", e);
+        }
+    }
+
+    public void unregisterNotificationListener() {
+        if (isRegister) {
+            try {
+                mNotificationListener.unregisterAsSystemService();
+            } catch (RemoteException e) {
+                e.printStackTrace();
+            }
+            isRegister = false;
+        }
+    }
+
+    public List<StatusBarNotification> loadNotices(){
+        mNotifications = mNotificationListener.getNotifications();
+        return mNotifications;
+    }
+
+    private List<ResolveInfo> mApps;
+
+    public void loadApps() {
+        Intent intent = new Intent(Intent.ACTION_MAIN, null);
+        intent.addCategory(Intent.CATEGORY_LAUNCHER);
+        mApps = getPackageManager().queryIntentActivities(intent, 0);
+    }
+
+    public class AllAppAdapter extends BaseAdapter {
+
+        @Override
+        public int getCount() {
+            return  mApps == null ? 0 : mApps.size();
+        }
+
+        @Override
+        public Object getItem(int i) {
+            return mApps.get(i);
+        }
+
+        @Override
+        public long getItemId(int i) {
+            return 0;
+        }
+
+        @Override
+        public View getView(final int i, View view, ViewGroup viewGroup) {
+            ViewHolder holder;
+            ResolveInfo info = (ResolveInfo) getItem(i);
+            if (view == null) {
+                holder = new ViewHolder();
+                view = LayoutInflater.from(Launcher.this).inflate(R.layout.app_item_layout, null);
+                holder.mImageView = (ImageView) view.findViewById(R.id.iv_app_icon);
+                holder.mTextView = (TextView) view.findViewById(R.id.tv_app_name);
+                view.setTag(holder);
+            } else {
+                holder = (ViewHolder) view.getTag();
+            }
+            holder.mImageView.setImageDrawable(info.loadIcon(getPackageManager()));
+            holder.mTextView.setText(info.loadLabel(getPackageManager()));
+
+            holder.mImageView.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    ResolveInfo info = mApps.get(i);
+                    String pkg = info.activityInfo.packageName;
+                    //String cls = info.activityInfo.name;
+                    //ComponentName componentName = new ComponentName(pkg, cls);
+                    //Intent intent = new Intent();
+                    //intent.setComponent(componentName);
+                    PackageManager packageManager = getPackageManager();
+                    Intent intent = packageManager.getLaunchIntentForPackage(pkg);
+                    startActivity(intent);
+                }
+            });
+
+            return view;
+        }
+
+
+        class ViewHolder {
+            TextView mTextView;
+
+            ImageView mImageView;
+        }
+
+
+    }
+
+
     @Override
     public void bindScreens(ArrayList<Long> orderedScreenIds) {
+        orderedScreenIds.add((long) 0);
+        orderedScreenIds.add((long) 1);
+
         bindAddScreens(orderedScreenIds);
 
         // If there are no screens, we need to have an empty screen
@@ -3658,10 +3990,13 @@ public class Launcher extends Activity
 
         // Create the custom content page (this call updates mDefaultScreen which calls
         // setCurrentPage() so ensure that all pages are added before calling this).
-        if (hasCustomContentToLeft()) {
+       // if (hasCustomContentToLeft()) {
             mWorkspace.createCustomContentContainer();
             populateCustomContentContainer();
-        }
+        //}
+
+        // mNotificationListener.registerAsSystemService(getBaseContext(),
+        //     new ComponentName(this.getPackageName(), getClass().getCanonicalName()),-1);
     }
 
     @Override

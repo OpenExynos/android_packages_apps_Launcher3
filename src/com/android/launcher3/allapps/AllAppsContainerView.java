@@ -239,7 +239,7 @@ public class AllAppsContainerView extends BaseContainerView implements DragSourc
         // Add the new search view to the layout
         View searchBarView = searchController.getView(mSearchBarContainerView);
         mSearchBarContainerView.addView(searchBarView);
-        mSearchBarContainerView.setVisibility(View.VISIBLE);
+       // mSearchBarContainerView.setVisibility(View.VISIBLE);
         mSearchBarView = searchBarView;
         setHasSearchBar();
 
@@ -459,17 +459,17 @@ public class AllAppsContainerView extends BaseContainerView implements DragSourc
     @Override
     public boolean onLongClick(View v) {
         // Return early if this is not initiated from a touch
-        if (!v.isInTouchMode()) return false;
+        // if (!v.isInTouchMode()) return false;
         // When we have exited all apps or are in transition, disregard long clicks
-        if (!mLauncher.isAppsViewVisible() ||
-                mLauncher.getWorkspace().isSwitchingState()) return false;
+        // if (!mLauncher.isAppsViewVisible() ||
+        //         mLauncher.getWorkspace().isSwitchingState()) return false;
         // Return if global dragging is not enabled
-        if (!mLauncher.isDraggingEnabled()) return false;
+        // if (!mLauncher.isDraggingEnabled()) return false;
 
         // Start the drag
-        mLauncher.getWorkspace().beginDragShared(v, mIconLastTouchPos, this, false);
+        // mLauncher.getWorkspace().beginDragShared(v, mIconLastTouchPos, this, false);
         // Enter spring loaded mode
-        mLauncher.enterSpringLoadedDragMode();
+        // mLauncher.enterSpringLoadedDragMode();
 
         return false;
     }
@@ -565,6 +565,7 @@ public class AllAppsContainerView extends BaseContainerView implements DragSourc
      * Handles the touch events to dismiss all apps when clicking outside the bounds of the
      * recycler view.
      */
+    int mXDown = -1;
     private boolean handleTouchEvent(MotionEvent ev) {
         DeviceProfile grid = mLauncher.getDeviceProfile();
         int x = (int) ev.getX();
@@ -572,6 +573,7 @@ public class AllAppsContainerView extends BaseContainerView implements DragSourc
 
         switch (ev.getAction()) {
             case MotionEvent.ACTION_DOWN:
+                mXDown = (int) ev.getX();
                 if (!mContentBounds.isEmpty()) {
                     // Outset the fixed bounds and check if the touch is outside all apps
                     Rect tmpRect = new Rect(mContentBounds);
@@ -605,6 +607,14 @@ public class AllAppsContainerView extends BaseContainerView implements DragSourc
                 // Fall through
             case MotionEvent.ACTION_CANCEL:
                 mBoundsCheckLastTouchDownPos.set(-1, -1);
+                break;
+            case MotionEvent.ACTION_MOVE:
+                final int mLastX = (int) ev.getX();
+                final int xDiff = (int) (mLastX - mXDown);
+                if(xDiff > 100){
+                    Launcher launcher = (Launcher) getContext();
+                    launcher.showWorkspace(true);
+                }
                 break;
         }
         return false;

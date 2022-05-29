@@ -497,6 +497,7 @@ public class AllAppsGridAdapter extends RecyclerView.Adapter<AllAppsGridAdapter.
 
     @Override
     public void onBindViewHolder(ViewHolder holder, int position) {
+        position = getItemCount()-position;
         switch (holder.getItemViewType()) {
             case ICON_VIEW_TYPE: {
                 AppInfo info = mApps.getAdapterItems().get(position).appInfo;

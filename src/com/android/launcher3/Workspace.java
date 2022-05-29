@@ -58,6 +58,10 @@ import android.view.accessibility.AccessibilityManager;
 import android.view.animation.DecelerateInterpolator;
 import android.view.animation.Interpolator;
 import android.widget.TextView;
+import android.widget.ImageView;
+import android.widget.LinearLayout;
+import android.widget.RelativeLayout;
+import android.widget.GridView;
 
 import com.android.launcher3.FolderIcon.FolderRingAnimator;
 import com.android.launcher3.Launcher.CustomContentCallbacks;
@@ -78,6 +82,20 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.concurrent.atomic.AtomicInteger;
+
+import java.util.Calendar;
+import java.util.Date;
+import java.util.TimeZone;
+import java.text.DateFormat;
+import java.text.SimpleDateFormat;
+
+import com.android.launcher3.NotificationPopupView;
+import android.view.Gravity;
+import android.content.Intent;
+import android.content.IntentFilter;
+import android.graphics.BitmapFactory;
+import android.content.BroadcastReceiver;
+import android.os.BatteryManager;
 
 /**
  * The workspace is a wide area with a wallpaper and a finite number of pages.
@@ -549,6 +567,42 @@ public class Workspace extends PagedView
         return insertNewWorkspaceScreen(screenId, getChildCount());
     }
 
+    private TextView tv_date;
+    private TextView tv_battery;
+    private ImageView iv_battery;
+
+    private final Runnable mTimeRefresher = new Runnable() {
+
+        @Override
+        public void run() {
+            Calendar calendar = Calendar.getInstance(TimeZone.getDefault());
+            final Date d = new Date();
+            calendar.setTime(d);
+
+            SimpleDateFormat formatter = new SimpleDateFormat ("MMM d    EE");
+
+            tv_date.setText(formatter.format(d));
+
+            // tv_date.setText(DateFormat.getDateInstance(DateFormat.MEDIUM).format(d));
+
+            mHandler.postDelayed(this, REFRESH_DELAY);
+        }
+    };
+
+    private final Handler mHandler = new Handler();
+    private static final String DATE_FORMAT = "%02d:%02d";
+    private static final int REFRESH_DELAY = 5000;
+
+    private GridView mGridView;
+
+    private Launcher launcher = (Launcher) getContext();
+
+    private Launcher.AllAppAdapter mAdapter = launcher.new AllAppAdapter();
+
+    public void refreshApp(){
+        mAdapter.notifyDataSetChanged();
+    }
+
     public long insertNewWorkspaceScreen(long screenId, int insertIndex) {
         if (mWorkspaceScreens.containsKey(screenId)) {
             throw new RuntimeException("Screen id " + screenId + " already exists!");
@@ -558,6 +612,40 @@ public class Workspace extends PagedView
         // created CellLayout.
         CellLayout newScreen = (CellLayout) mLauncher.getLayoutInflater().inflate(
                         R.layout.workspace_screen, this, false /* attachToRoot */);
+
+         CellLayout.LayoutParams lp = new CellLayout.LayoutParams(0, 0, 0, 0);
+        lp.canReorder  = false;
+        lp.isFullscreen = true;
+        if(insertIndex == 0){
+            LinearLayout clock = (LinearLayout) mLauncher.getLayoutInflater().inflate(
+                        R.layout.clock_layout, this, false);
+            tv_date = (TextView) clock.findViewById(R.id.tv_date);
+
+            mHandler.post(mTimeRefresher);
+            newScreen.addViewToCellLayout(clock, 0, 0, lp, true);
+
+            iv_battery = (ImageView) clock.findViewById(R.id.iv_battery);
+            tv_battery = (TextView) clock.findViewById(R.id.tv_battery);
+            mLauncher.registerReceiver(new BatteryBroadcastReceiver(), new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
+        } else if(insertIndex == 1){
+            RelativeLayout appList = (RelativeLayout) mLauncher.getLayoutInflater().inflate(
+                R.layout.customer_all_app_layout,this,false);
+
+            // Launcher launcher = (Launcher) getContext();
+
+            launcher.loadApps();
+
+            // Launcher.AllAppAdapter mAdapter = launcher.new AllAppAdapter();
+
+            mGridView = (GridView) appList.findViewById(R.id.gv_all_app_list);
+            mGridView.setAdapter(mAdapter);
+
+            // mAppsView = (AllAppsContainerView) appList.findViewById(R.id.apps_view);
+
+            // mHandler.postDelayed(mAppRefresher,500);
+
+            newScreen.addViewToCellLayout(appList, 0, 0, lp, true);
+        }
 
         newScreen.setOnLongClickListener(mLongClickListener);
         newScreen.setOnClickListener(mLauncher);
@@ -572,6 +660,37 @@ public class Workspace extends PagedView
             newScreen.enableAccessibleDrag(true, CellLayout.WORKSPACE_ACCESSIBILITY_DRAG);
         }
         return screenId;
+
+    }
+
+    class BatteryBroadcastReceiver extends BroadcastReceiver{
+
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if(intent.getAction().equals(Intent.ACTION_BATTERY_CHANGED)){
+                int level = intent.getIntExtra("level", 0);
+                int status = intent.getIntExtra("status", 0);
+                int scale = intent.getIntExtra("scale", 100);
+                int curBattery = level * 100 / scale;
+                tv_battery.setText(curBattery + "%");
+                switch (status) {
+                    case BatteryManager.BATTERY_STATUS_UNKNOWN:
+                        break;
+                    case BatteryManager.BATTERY_STATUS_CHARGING:
+                        iv_battery.setImageResource(R.drawable.stat_sys_battery_charge);
+                        iv_battery.getDrawable().setLevel(level);
+                        break;
+                    case BatteryManager.BATTERY_STATUS_DISCHARGING:
+                        iv_battery.setImageResource(R.drawable.stat_sys_battery);
+                        iv_battery.getDrawable().setLevel(level);
+                        break;
+                    case BatteryManager.BATTERY_STATUS_NOT_CHARGING:
+                        break;
+                    case BatteryManager.BATTERY_STATUS_FULL:
+                        break;
+                }
+            }
+        }
     }
 
     public void createCustomContentContainer() {
@@ -1074,6 +1193,12 @@ public class Workspace extends PagedView
         return super.dispatchUnhandledMove(focused, direction);
     }
 
+    private NotificationPopupView popupView;
+
+    private QuickSettingPopupView quickView;
+
+    private boolean moveFlag = false;
+
     @Override
     public boolean onInterceptTouchEvent(MotionEvent ev) {
         switch (ev.getAction() & MotionEvent.ACTION_MASK) {
@@ -1090,8 +1215,41 @@ public class Workspace extends PagedView
                     onWallpaperTap(ev);
                 }
             }
+
+            final float mLastY = ev.getY();
+            final float yDiff = (float)(mLastY - mYDown);
+
+            if(yDiff < -50 && getCurrentPage() == 1){
+                Launcher launcher = (Launcher) getContext();
+                popupView = new NotificationPopupView(launcher,launcher.loadNotices());
+                popupView.showAsDropDown(tv_date, 0,-200);
+
+            } else if(yDiff > 50 && getCurrentPage() == 1){
+                Launcher launcher = (Launcher) getContext();
+                quickView = new QuickSettingPopupView(launcher);
+                quickView.showAsDropDown(tv_date, 0,-270);
+
+            }
+        case MotionEvent.ACTION_MOVE:
+            // final float mLastY = ev.getY();
+            // final float yDiff = (float)(mLastY - mYDown);
+            // if(yDiff < -50 && getCurrentPage() == 1){
+            //     moveFlag = true;
+            // }
+            break;
         }
+
         return super.onInterceptTouchEvent(ev);
+    }
+
+    public interface WorkspaceCallBack{
+        void show();
+    }
+
+    private WorkspaceCallBack mCallback;
+
+    public void setCallback(WorkspaceCallBack callback){
+        this.mCallback = callback;
     }
 
     @Override

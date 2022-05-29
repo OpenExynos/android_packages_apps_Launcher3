@@ -29,6 +29,8 @@ import android.view.View;
 import android.view.animation.AccelerateInterpolator;
 import android.view.animation.DecelerateInterpolator;
 
+import android.view.animation.AnimationUtils;
+
 import com.android.launcher3.allapps.AllAppsContainerView;
 import com.android.launcher3.util.UiThreadCircularReveal;
 import com.android.launcher3.util.Thunk;
@@ -383,6 +385,7 @@ public class LauncherStateTransitionAnimation {
             toView.setTranslationY(0.0f);
             toView.setScaleX(1.0f);
             toView.setScaleY(1.0f);
+            toView.setAnimation(AnimationUtils.loadAnimation(this.mLauncher,R.anim.show_app_anim));
             toView.setVisibility(View.VISIBLE);
             toView.bringToFront();
 
